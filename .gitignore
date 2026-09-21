@@ -130,3 +130,11 @@ x86/
 # Built Visual Studio Code Extensions
 *.vsix
 *.zip
+
+### Plugin packaging
+# Build/staging trees next to a package (dist/ is ignored above)
+dist.staging/
+
+### CMake user presets
+# Machine-local build locations; never commit absolute paths
+CMakeUserPresets.json

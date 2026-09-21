@@ -91,12 +91,16 @@ int main(int argc, char *argv[])
     check(root.value(QStringLiteral("id")).toString()
               == QStringLiteral("io.1218.seer.image-histogram"),
           "manifest id is io.1218.seer.image-histogram");
+    // The package renders three scopes, so the display name is "Image Scopes".
+    // The stable package id is unchanged across versions.
     check(root.value(QStringLiteral("name")).toString()
-              == QStringLiteral("RGB Histogram"),
-          "manifest name is RGB Histogram");
+              == QStringLiteral("Image Scopes"),
+          "manifest name is Image Scopes");
+    // 1.1.0 publishes the statistics rows and the three charts in one subgroup
+    // named after the plugin.
     check(root.value(QStringLiteral("version")).toString()
-              == QStringLiteral("1.0.0"),
-          "manifest version is 1.0.0");
+              == QStringLiteral("1.1.0"),
+          "manifest version is 1.1.0");
     check(root.value(QStringLiteral("appMinVersion")).toString()
               == QStringLiteral("4.5.10"),
           "appMinVersion is 4.5.10");
@@ -185,9 +189,17 @@ int main(int argc, char *argv[])
             = tempDir.filePath(QStringLiteral("sample_out.json"));
         const QString pngPath
             = tempDir.filePath(QStringLiteral("rgb-histogram.png"));
+        const QString wavePath
+            = tempDir.filePath(QStringLiteral("waveform.png"));
+        const QString vecPath
+            = tempDir.filePath(QStringLiteral("vectorscope.png"));
         check(QFile::exists(jsonPath), "sample_out.json is created");
         check(QFile::exists(pngPath),
               "rgb-histogram.png is created in output-dir");
+        check(QFile::exists(wavePath),
+              "waveform.png is created in output-dir");
+        check(QFile::exists(vecPath),
+              "vectorscope.png is created in output-dir");
 
         QFile jf(jsonPath);
         if (jf.open(QIODevice::ReadOnly)) {
@@ -195,10 +207,78 @@ int main(int argc, char *argv[])
             check(outDoc.object().value(QStringLiteral("result_schema")).toInt()
                       == 1,
                   "staged helper output has result_schema: 1");
-            const auto data
+            const auto envelope
                 = outDoc.object().value(QStringLiteral("data")).toObject();
+            // The group title is spelled out because this test is black-box: it
+            // runs the packaged helper and deliberately does not link the plugin
+            // core, so it cannot call imageScopesGroupTitle().
+            // The subgroup value is an array of one-key fields in the plugin's
+            // own order; merge them so the assertions can look fields up by key.
+            QJsonObject data;
+            const auto items
+                = envelope.value(QStringLiteral("Image Scopes"))
+                      .toObject()
+                      .value(QStringLiteral("value"))
+                      .toArray();
+            for (const auto &item : items) {
+                const auto fields = item.toObject();
+                for (auto field = fields.constBegin();
+                     field != fields.constEnd(); ++field) {
+                    data.insert(field.key(), field.value());
+                }
+            }
             check(data.value(QStringLiteral("Pixels")).toInteger() == 16,
                   "staged helper computes correct pixel count");
+            const auto histImg
+                = data.value(QStringLiteral("RGB Histogram")).toObject();
+            check(histImg.value(QStringLiteral("value")).toString()
+                      == QStringLiteral("rgb-histogram.png"),
+                  "RGB Histogram references rgb-histogram.png");
+            const auto waveImg
+                = data.value(QStringLiteral("Waveform")).toObject();
+            check(waveImg.value(QStringLiteral("value")).toString()
+                      == QStringLiteral("waveform.png"),
+                  "Waveform references waveform.png");
+            const auto vecImg
+                = data.value(QStringLiteral("Vectorscope")).toObject();
+            check(vecImg.value(QStringLiteral("value")).toString()
+                      == QStringLiteral("vectorscope.png"),
+                  "Vectorscope references vectorscope.png");
+
+            // The analysis convention row keeps its plugin-qualified name so its
+            // row identity stays stable across this restructuring.
+            check(data.contains(
+                      QStringLiteral("Image Scopes Analysis Convention")),
+                  "analysis convention field has a unique name");
+            check(!data.contains(QStringLiteral("Analysis")),
+                  "generic Analysis key is not used");
+            // The three charts belong to the same subgroup as the rows, and the
+            // section level carries nothing but that subgroup.
+            check(data.value(QStringLiteral("RGB Histogram")).isObject(),
+                  "charts stay inside the plugin subgroup");
+            check(envelope.size() == 1,
+                  "the section level only carries the plugin subgroup");
+            check(data.value(QStringLiteral("Histogram Y Scale")).toString()
+                      == QStringLiteral("log1p"),
+                  "histogram Y scale is still published as log1p");
+            // Text rows are flat strings: the host only realises typed
+            // `image` values and degrades every other type with a warning.
+            check(data.value(QStringLiteral("Histogram Y Scale")).isString(),
+                  "histogram Y scale is a flat string row");
+            check(data.value(QStringLiteral("Image Scopes Analysis Convention"))
+                      .isString(),
+                  "analysis convention is a flat string row");
+
+            // The three attachments must be independently decodable and distinct.
+            const QImage histImage(pngPath);
+            const QImage waveImage(wavePath);
+            const QImage vecImage(vecPath);
+            check(!histImage.isNull() && !waveImage.isNull()
+                      && !vecImage.isNull(),
+                  "three scope images decode");
+            check(histImage != waveImage && histImage != vecImage
+                      && waveImage != vecImage,
+                  "three scope images are visibly different");
         }
     }
 

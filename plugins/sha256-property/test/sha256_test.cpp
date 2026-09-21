@@ -25,7 +25,7 @@ std::filesystem::path tempDirectory()
 {
     wchar_t buffer[MAX_PATH]{};
     GetTempPathW(MAX_PATH, buffer);
-    const auto path = std::filesystem::path(buffer) / L"Seer Sha256 测试";
+    const auto path = std::filesystem::path(buffer) / L"Seer Sha256 P\u00E4th-\u30C6\u30B9\u30C8";
     std::filesystem::create_directories(path);
     return path;
 }
@@ -62,7 +62,7 @@ int main()
     const auto empty = writeFile(directory / L"empty.bin", "");
     const auto abc = writeFile(directory / L"abc.txt", "abc");
     const auto binary = writeFile(directory / L"binary.bin", std::string("\0\x01\x7f\xff", 4));
-    const auto unicode = writeFile(directory / L"路径 file.txt", "unicode");
+    const auto unicode = writeFile(directory / L"P\u00E4th-\u30C6\u30B9\u30C8 file.txt", "unicode");
 
     const auto emptyResult = hashFile(empty.wstring());
     check(emptyResult.ok && emptyResult.bytes == 0, "empty file hashes");

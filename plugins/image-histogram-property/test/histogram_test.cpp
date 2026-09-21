@@ -16,6 +16,8 @@ private slots:
     void testTransparentPixel();
     void testMixedImage();
     void testNullImage();
+    void testGrayRampFixture();
+    void testPremultipliedInputUsesStraightRgb();
 };
 
 void HistogramTest::testBlackPixel()
@@ -201,6 +203,49 @@ void HistogramTest::testMixedImage()
     QCOMPARE(stats.meanR, 113.75);
     QCOMPARE(stats.meanG, 101.25);
     QCOMPARE(stats.meanB, 140.0);
+}
+
+// Numeric baseline fixture for the established histogram behavior: a 256-step
+// gray ramp must land exactly one sample in every bin of every channel.
+void HistogramTest::testGrayRampFixture()
+{
+    QImage img(256, 1, QImage::Format_RGB888);
+    for (int x = 0; x < 256; ++x) {
+        img.setPixelColor(x, 0, QColor(x, x, x));
+    }
+
+    const auto stats = computeHistogram(img);
+    QCOMPARE(stats.pixels, 256ULL);
+    QCOMPARE(stats.alphaPixels, 0ULL);
+    for (int i = 0; i < 256; ++i) {
+        QCOMPARE(stats.red[i], 1ULL);
+        QCOMPARE(stats.green[i], 1ULL);
+        QCOMPARE(stats.blue[i], 1ULL);
+    }
+    QCOMPARE(stats.shadowR, 1ULL);
+    QCOMPARE(stats.shadowG, 1ULL);
+    QCOMPARE(stats.shadowB, 1ULL);
+    QCOMPARE(stats.clippedR, 1ULL);
+    QCOMPARE(stats.clippedG, 1ULL);
+    QCOMPARE(stats.clippedB, 1ULL);
+    QCOMPARE(stats.meanR, 127.5);
+    QCOMPARE(stats.meanG, 127.5);
+    QCOMPARE(stats.meanB, 127.5);
+}
+
+// A premultiplied input must be analyzed as straight (non-premultiplied) RGB;
+// analyzing the stored premultiplied channels would halve the mean.
+void HistogramTest::testPremultipliedInputUsesStraightRgb()
+{
+    QImage img(1, 1, QImage::Format_ARGB32_Premultiplied);
+    img.setPixelColor(0, 0, QColor(255, 255, 255, 128));
+
+    const auto stats = computeHistogram(img);
+    QCOMPARE(stats.pixels, 1ULL);
+    QCOMPARE(stats.alphaPixels, 1ULL);
+    QCOMPARE(stats.meanR, 255.0);
+    QCOMPARE(stats.meanG, 255.0);
+    QCOMPARE(stats.meanB, 255.0);
 }
 
 void HistogramTest::testNullImage()

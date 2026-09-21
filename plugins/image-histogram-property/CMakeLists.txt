@@ -15,6 +15,8 @@ enable_testing()
 add_library(image_histogram_core STATIC
     src/histogram.cpp
     src/histogramrenderer.cpp
+    src/imageanalysis.cpp
+    src/scoperenderer.cpp
     src/histogramhelper.cpp
 )
 target_include_directories(image_histogram_core PUBLIC src)
@@ -49,6 +51,24 @@ add_executable(image_histogram_output_test
 target_link_libraries(image_histogram_output_test PRIVATE image_histogram_core Qt6::Test)
 add_test(NAME image_histogram_output_test COMMAND image_histogram_output_test)
 set_tests_properties(image_histogram_output_test PROPERTIES
+    ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}"
+)
+
+add_executable(image_histogram_analysis_test
+    test/imageanalysis_test.cpp
+)
+target_link_libraries(image_histogram_analysis_test PRIVATE image_histogram_core Qt6::Test)
+add_test(NAME image_histogram_analysis_test COMMAND image_histogram_analysis_test)
+set_tests_properties(image_histogram_analysis_test PROPERTIES
+    ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}"
+)
+
+add_executable(image_histogram_scope_renderer_test
+    test/scoperenderer_test.cpp
+)
+target_link_libraries(image_histogram_scope_renderer_test PRIVATE image_histogram_core Qt6::Test)
+add_test(NAME image_histogram_scope_renderer_test COMMAND image_histogram_scope_renderer_test)
+set_tests_properties(image_histogram_scope_renderer_test PROPERTIES
     ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}"
 )
 

@@ -1,16 +1,16 @@
 {
   "schema_version": 1,
-  "id": "io.1218.seer.image-histogram",
-  "name": "Image Scopes",
-  "description": "Renders an RGB histogram, a luma waveform, and a Cb/Cr vectorscope with exposure statistics for supported image formats.",
-  "version": "1.1.0",
+  "id": "io.1218.seer.git-info",
+  "name": "Git Info",
+  "description": "Reports repository information for the current folder using Git itself.",
+  "version": "1.0.0",
   "appMinVersion": "4.5.10",
   "backend": "process",
   "capabilities": ["property"],
-  "extensions": ["png", "jpg", "jpeg", "bmp", "webp", "tif", "tiff"],
+  "extensions": ["${type_folder}"],
   "invocations": {
     "property": {
-      "command": "image_histogram.exe",
+      "command": "git_info.exe",
       "arguments": ["--input", "${input_file}", "--output", "${output_file}", "--output-dir", "${output_dir}"],
       "result_schema": 1,
       "timeout_ms": 30000,

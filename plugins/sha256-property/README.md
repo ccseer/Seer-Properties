@@ -26,17 +26,25 @@ To configure uppercase hash output in Seer's plugin settings, override the capab
 Build and validate the package with:
 
 ```powershell
-cmake -S plugins/sha256-property -B plugins/sha256-property/build -G "Visual Studio 17 2022" -A x64
-cmake --build plugins/sha256-property/build --config Release --target sha256_property_manifest_test
-ctest --test-dir plugins/sha256-property/build -C Release -R sha256_property_manifest_test --output-on-failure
+cd plugins/sha256-property
+cmake --preset default            # Ninja, Release; binaryDir under C:/Dev/build_output/Seer-Properties
+cmake --build --preset default --target sha256_property_manifest_test
+ctest --preset default -R sha256_property_manifest_test
 ```
 
-Create a distributable package with:
+Create a distributable package with `scripts/package-plugins.ps1` from the
+repository root (it writes one ZIP per package
+`plugins/<pkg>/<pkg>-<version>.zip` and prints its SHA-256), or package by hand
+from inside the package directory:
 
 ```powershell
-cmake --install plugins/sha256-property/build --config Release --prefix plugins/sha256-property/dist
-Compress-Archive -Path plugins/sha256-property/dist/* -DestinationPath plugins/sha256-property/sha256-property-1.0.0.zip
+cmake --install "C:/Dev/build_output/Seer-Properties/sha256-property" --prefix dist
+& "C:\Program Files\7-Zip\7z.exe" a -tzip -mx=9 -y sha256-property-1.0.0.zip .\dist\*
 ```
+
+No `sha256-property-1.0.0.zip.sha256` is produced: the script verifies every
+archive entry against `dist` and prints the checksum, so a committed sidecar
+file could only go stale.
 
 The manifest test stages both `plugin.json` and the helper, checks the exact
 manifest tokens and package-relative command, then invokes the staged helper

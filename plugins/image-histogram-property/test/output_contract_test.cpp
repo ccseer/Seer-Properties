@@ -2,6 +2,7 @@
 #include <QFile>
 #include <QImage>
 #include <QImageReader>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
@@ -24,11 +25,61 @@ private slots:
     void testRejectionOfWriteOutsideOutputDirectory();
     void testCommandLineParsing();
     void testCommandLineRejectsUnknownAndDuplicateOptions();
+    void testDefaultProducesThreeScopes();
+    void testScopesSelectorHistogramOnly();
+    void testScopesSelectorRejectsUnknownAndDuplicates();
+    void testEmptyScopesDefaultsToAll();
+    void testThreePngsAreIndependentlyDecodable();
+    void testAttachmentFailurePublishesNoResult();
+    void testOnlyRequestedExtensionMatchesHostOutputDiscovery();
+    void testAlphaImageProducesScopesAndAlphaStatistic();
+    void testHighBitDepthInputIsAnalyzed();
+    void testGrayRampStatistics();
+    void testInternalDeadlinePublishesResult();
+    void testPluginGroupHoldsEveryRowAndChart();
 
 private:
     QString createValidImage(const QString &dirPath);
     QString createLargeDimensionBmp(const QString &dirPath);
+    QJsonObject readEnvelope(const QString &jsonPath);
+    QJsonObject readData(const QString &jsonPath);
 };
+
+// The whole `data` object. This plugin publishes exactly one key - its subgroup -
+// so the helper is used to prove that nothing leaks to the section level.
+QJsonObject OutputContractTest::readEnvelope(const QString &jsonPath)
+{
+    QFile file(jsonPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return QJsonObject();
+    }
+    return QJsonDocument::fromJson(file.readAll())
+        .object()
+        .value(QStringLiteral("data"))
+        .toObject();
+}
+
+// Every flat row lives in the subgroup titled after the plugin, so row
+// assertions read the group value.
+// Every field of the subgroup - rows and charts alike - merged by key, for
+// assertion reads that do not care about position.
+QJsonObject OutputContractTest::readData(const QString &jsonPath)
+{
+    QJsonObject merged;
+    const auto items = readEnvelope(jsonPath)
+                           .value(imageScopesGroupTitle())
+                           .toObject()
+                           .value(QStringLiteral("value"))
+                           .toArray();
+    for (const auto &item : items) {
+        const auto fields = item.toObject();
+        for (auto field = fields.constBegin(); field != fields.constEnd();
+             ++field) {
+            merged.insert(field.key(), field.value());
+        }
+    }
+    return merged;
+}
 
 QString OutputContractTest::createValidImage(const QString &dirPath)
 {
@@ -99,6 +150,9 @@ void OutputContractTest::testOutputDirectoryCaseInsensitive()
     QVERIFY(QFile::exists(output + QStringLiteral(".json")));
 }
 
+// A missing, unsupported or undecodable input is a domain outcome: exit 0 with
+// a schema-1 result that states why, so the Inspector shows an explanation
+// instead of nothing.
 void OutputContractTest::testMissingInput()
 {
     QTemporaryDir tempDir;
@@ -107,7 +161,13 @@ void OutputContractTest::testMissingInput()
     const QString input = tempDir.filePath(QStringLiteral("non_existent.png"));
     const QString outputBase = tempDir.filePath(QStringLiteral("output"));
     const int code = executeImageHistogram(input, outputBase, tempDir.path());
-    QCOMPARE(code, 1);
+    QCOMPARE(code, 0);
+
+    const auto data = readData(outputBase + QStringLiteral(".json"));
+    QCOMPARE(data.value(QStringLiteral("Status")).toString(),
+             QStringLiteral("ReadError"));
+    QVERIFY(!data.value(QStringLiteral("Reason")).toString().isEmpty());
+    QVERIFY(!QFile::exists(tempDir.filePath(QStringLiteral("rgb-histogram.png"))));
 }
 
 void OutputContractTest::testUnsupportedFormat()
@@ -123,7 +183,14 @@ void OutputContractTest::testUnsupportedFormat()
 
     const QString outputBase = tempDir.filePath(QStringLiteral("output"));
     const int code = executeImageHistogram(input, outputBase, tempDir.path());
-    QCOMPARE(code, 1);
+    QCOMPARE(code, 0);
+
+    const auto data = readData(outputBase + QStringLiteral(".json"));
+    QCOMPARE(data.value(QStringLiteral("Status")).toString(),
+             QStringLiteral("UnsupportedOrMalformed"));
+    QVERIFY(data.value(QStringLiteral("Reason")).toString().contains(
+        QStringLiteral("xyz")));
+    QVERIFY(!QFile::exists(tempDir.filePath(QStringLiteral("rgb-histogram.png"))));
 }
 
 void OutputContractTest::testCorruptImage()
@@ -139,7 +206,13 @@ void OutputContractTest::testCorruptImage()
 
     const QString outputBase = tempDir.filePath(QStringLiteral("output"));
     const int code = executeImageHistogram(input, outputBase, tempDir.path());
-    QCOMPARE(code, 1);
+    QCOMPARE(code, 0);
+
+    const auto data = readData(outputBase + QStringLiteral(".json"));
+    QCOMPARE(data.value(QStringLiteral("Status")).toString(),
+             QStringLiteral("UnsupportedOrMalformed"));
+    QVERIFY(!data.value(QStringLiteral("Reason")).toString().isEmpty());
+    QVERIFY(!QFile::exists(tempDir.filePath(QStringLiteral("rgb-histogram.png"))));
 }
 
 void OutputContractTest::testOutputDirectoryFailure()
@@ -180,7 +253,7 @@ void OutputContractTest::testValidImageAndExactJsonFields()
     QCOMPARE(root.value(QStringLiteral("result_schema")).toInt(), 1);
     QVERIFY(root.value(QStringLiteral("data")).isObject());
 
-    const auto data = root.value(QStringLiteral("data")).toObject();
+    const auto data = readData(tempDir.filePath(QStringLiteral("result.json")));
     QCOMPARE(data.value(QStringLiteral("Width")).toInteger(), 2);
     QCOMPARE(data.value(QStringLiteral("Height")).toInteger(), 2);
     QCOMPARE(data.value(QStringLiteral("Pixels")).toInteger(), 4);
@@ -198,14 +271,11 @@ void OutputContractTest::testValidImageAndExactJsonFields()
     QCOMPARE(data.value(QStringLiteral("Shadow G")).toInteger(), 1);
     QCOMPARE(data.value(QStringLiteral("Shadow B")).toInteger(), 1);
 
-    const auto yScale
-        = data.value(QStringLiteral("Histogram Y Scale")).toObject();
-    QCOMPARE(yScale.value(QStringLiteral("type")).toString(),
-             QStringLiteral("text"));
-    QCOMPARE(yScale.value(QStringLiteral("value")).toString(),
+    QCOMPARE(data.value(QStringLiteral("Histogram Y Scale")).toString(),
              QStringLiteral("log1p"));
 
-    const auto histImg = data.value(QStringLiteral("RGB Histogram")).toObject();
+    const auto histImg
+        = data.value(QStringLiteral("RGB Histogram")).toObject();
     QCOMPARE(histImg.value(QStringLiteral("type")).toString(),
              QStringLiteral("image"));
     QCOMPARE(histImg.value(QStringLiteral("value")).toString(),
@@ -229,10 +299,8 @@ void OutputContractTest::testRelativeAttachmentValue()
 
     QCOMPARE(executeImageHistogram(input, outputBase, tempDir.path()), 0);
 
-    QFile jsonFile(tempDir.filePath(QStringLiteral("test_att.json")));
-    QVERIFY(jsonFile.open(QIODevice::ReadOnly));
-    const auto doc     = QJsonDocument::fromJson(jsonFile.readAll());
-    const auto data    = doc.object().value(QStringLiteral("data")).toObject();
+    const auto data
+        = readData(tempDir.filePath(QStringLiteral("test_att.json")));
     const auto histImg = data.value(QStringLiteral("RGB Histogram")).toObject();
 
     const QString attachmentVal
@@ -250,11 +318,18 @@ void OutputContractTest::testResourceLimitRejection()
     const QString largeBmp   = createLargeDimensionBmp(tempDir.path());
     const QString outputBase = tempDir.filePath(QStringLiteral("large_out"));
 
+    // Rejection is a domain outcome: the image is never decoded, but the reason
+    // is published.
     const int code
         = executeImageHistogram(largeBmp, outputBase, tempDir.path());
-    QCOMPARE(code, 1);
+    QCOMPARE(code, 0);
 
-    QVERIFY(!QFile::exists(tempDir.filePath(QStringLiteral("large_out.json"))));
+    const auto data
+        = readData(tempDir.filePath(QStringLiteral("large_out.json")));
+    QCOMPARE(data.value(QStringLiteral("Status")).toString(),
+             QStringLiteral("QueryError"));
+    QVERIFY(data.value(QStringLiteral("Reason")).toString().contains(
+        QStringLiteral("budget")));
     QVERIFY(
         !QFile::exists(tempDir.filePath(QStringLiteral("rgb-histogram.png"))));
 }
@@ -335,6 +410,352 @@ void OutputContractTest::testCommandLineRejectsUnknownAndDuplicateOptions()
     duplicate.insert(1, QStringLiteral("--input"));
     duplicate.insert(2, validImg);
     QCOMPARE(runImageHistogram(duplicate), 1);
+}
+
+void OutputContractTest::testDefaultProducesThreeScopes()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString input      = createValidImage(tempDir.path());
+    const QString outputBase = tempDir.filePath(QStringLiteral("result"));
+
+    QCOMPARE(executeImageHistogram(input, outputBase, tempDir.path(), {}), 0);
+
+    const auto data = readData(tempDir.filePath(QStringLiteral("result.json")));
+
+    const auto histImg = data.value(QStringLiteral("RGB Histogram")).toObject();
+    QCOMPARE(histImg.value(QStringLiteral("value")).toString(),
+             QStringLiteral("rgb-histogram.png"));
+    const auto waveImg = data.value(QStringLiteral("Waveform")).toObject();
+    QCOMPARE(waveImg.value(QStringLiteral("value")).toString(),
+             QStringLiteral("waveform.png"));
+    const auto vecImg = data.value(QStringLiteral("Vectorscope")).toObject();
+    QCOMPARE(vecImg.value(QStringLiteral("value")).toString(),
+             QStringLiteral("vectorscope.png"));
+
+    const QString pngPath = tempDir.path();
+    QImageReader histReader(tempDir.filePath(QStringLiteral("rgb-histogram.png")));
+    QVERIFY(histReader.canRead());
+    QImageReader waveReader(tempDir.filePath(QStringLiteral("waveform.png")));
+    QVERIFY(waveReader.canRead());
+    QImageReader vecReader(tempDir.filePath(QStringLiteral("vectorscope.png")));
+    QVERIFY(vecReader.canRead());
+    (void)pngPath;
+}
+
+void OutputContractTest::testScopesSelectorHistogramOnly()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString input      = createValidImage(tempDir.path());
+    const QString outputBase = tempDir.filePath(QStringLiteral("hist_only"));
+
+    const QSet<ImageScope> scopes{ImageScope::Histogram};
+    QCOMPARE(executeImageHistogram(input, outputBase, tempDir.path(), scopes),
+             0);
+
+    const QString jsonPath = tempDir.filePath(QStringLiteral("hist_only.json"));
+    QVERIFY(QFile::exists(jsonPath));
+    QVERIFY(QFile::exists(tempDir.filePath(QStringLiteral("rgb-histogram.png"))));
+    QVERIFY(!QFile::exists(tempDir.filePath(QStringLiteral("waveform.png"))));
+    QVERIFY(
+        !QFile::exists(tempDir.filePath(QStringLiteral("vectorscope.png"))));
+
+    const auto data = readData(jsonPath);
+    QVERIFY(data.contains(QStringLiteral("RGB Histogram")));
+    QVERIFY(!data.contains(QStringLiteral("Waveform")));
+    QVERIFY(!data.contains(QStringLiteral("Vectorscope")));
+}
+
+void OutputContractTest::testScopesSelectorRejectsUnknownAndDuplicates()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+    const QString input      = createValidImage(tempDir.path());
+    const QString outputBase = tempDir.filePath(QStringLiteral("sel_result"));
+
+    const QStringList prefix = {QStringLiteral("image_histogram.exe"),
+                                QStringLiteral("--input"),
+                                input,
+                                QStringLiteral("--output"),
+                                outputBase,
+                                QStringLiteral("--output-dir"),
+                                tempDir.path()};
+
+    auto unknown = prefix;
+    unknown.append({QStringLiteral("--scopes"),
+                    QStringLiteral("histogram,chroma")});
+    QCOMPARE(runImageHistogram(unknown), 1);
+
+    auto duplicate = prefix;
+    duplicate.append({QStringLiteral("--scopes"),
+                      QStringLiteral("waveform,waveform")});
+    QCOMPARE(runImageHistogram(duplicate), 1);
+
+    auto empty = prefix;
+    empty.append({QStringLiteral("--scopes"), QStringLiteral("")});
+    QCOMPARE(runImageHistogram(empty), 1);
+}
+
+void OutputContractTest::testEmptyScopesDefaultsToAll()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+    const QString input      = createValidImage(tempDir.path());
+    const QString outputBase = tempDir.filePath(QStringLiteral("empty_out"));
+    // An empty scopes set means "all scopes" (default), not zero scopes.
+    QCOMPARE(executeImageHistogram(input, outputBase, tempDir.path(), {}), 0);
+    QVERIFY(QFile::exists(tempDir.filePath(QStringLiteral("empty_out.json"))));
+    QVERIFY(
+        QFile::exists(tempDir.filePath(QStringLiteral("rgb-histogram.png"))));
+    QVERIFY(QFile::exists(tempDir.filePath(QStringLiteral("waveform.png"))));
+    QVERIFY(QFile::exists(tempDir.filePath(QStringLiteral("vectorscope.png"))));
+}
+
+void OutputContractTest::testThreePngsAreIndependentlyDecodable()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString input      = createValidImage(tempDir.path());
+    const QString outputBase = tempDir.filePath(QStringLiteral("three"));
+
+    QCOMPARE(executeImageHistogram(input, outputBase, tempDir.path(), {}), 0);
+
+    // Three distinct, independently decodable PNGs plus exactly one JSON.
+    QImageReader histReader(tempDir.filePath(QStringLiteral("rgb-histogram.png")));
+    QVERIFY(histReader.canRead());
+    QImageReader waveReader(tempDir.filePath(QStringLiteral("waveform.png")));
+    QVERIFY(waveReader.canRead());
+    QImageReader vecReader(tempDir.filePath(QStringLiteral("vectorscope.png")));
+    QVERIFY(vecReader.canRead());
+    QVERIFY(QFile::exists(tempDir.filePath(QStringLiteral("three.json"))));
+
+    // The three images must differ visibly.
+    const QImage hist = histReader.read();
+    const QImage wave = waveReader.read();
+    const QImage vec  = vecReader.read();
+    QVERIFY(!hist.isNull());
+    QVERIFY(!wave.isNull());
+    QVERIFY(!vec.isNull());
+    QVERIFY(hist != wave);
+    QVERIFY(hist != vec);
+    QVERIFY(wave != vec);
+}
+
+// An analysis that cannot finish inside the internal deadline publishes a
+// bounded-timeout result instead of being killed by the host with nothing
+// published.
+void OutputContractTest::testInternalDeadlinePublishesResult()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+    const auto input      = createValidImage(tempDir.path());
+    const QString outputBase = tempDir.filePath(QStringLiteral("deadline"));
+
+    // A zero deadline expires at the first checkpoint, after the decode.
+    QCOMPARE(executeImageHistogram(input, outputBase, tempDir.path(), {}, 0), 0);
+
+    const auto data = readData(outputBase + QStringLiteral(".json"));
+    QCOMPARE(data.value(QStringLiteral("Status")).toString(),
+             QStringLiteral("QueryError"));
+    QVERIFY(data.value(QStringLiteral("Reason")).toString().contains(
+        QStringLiteral("deadline")));
+    QVERIFY(
+        !QFile::exists(tempDir.filePath(QStringLiteral("rgb-histogram.png"))));
+}
+
+// A failure while publishing any attachment must not leave a complete-looking
+// result behind: the helper exits nonzero and writes no result JSON, so the
+// host cleans the request directory instead of showing partial charts.
+void OutputContractTest::testAttachmentFailurePublishesNoResult()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+    const QString input      = createValidImage(tempDir.path());
+    const QString outputBase = tempDir.filePath(QStringLiteral("blocked"));
+
+    // A directory cannot be replaced by a file, so QSaveFile::commit() fails for
+    // the waveform attachment while the histogram attachment succeeds first.
+    const QString wavePath = tempDir.filePath(QStringLiteral("waveform.png"));
+    QVERIFY(QDir().mkpath(wavePath));
+
+    QCOMPARE(executeImageHistogram(input, outputBase, tempDir.path(), {}), 1);
+    QVERIFY(!QFile::exists(tempDir.filePath(QStringLiteral("blocked.json"))));
+
+    // The same guard applies to the very first attachment.
+    QVERIFY(QDir().rmdir(wavePath));
+    const QString histPath
+        = tempDir.filePath(QStringLiteral("rgb-histogram.png"));
+    QVERIFY(QFile::remove(histPath));
+    QVERIFY(QDir().mkpath(histPath));
+    QCOMPARE(executeImageHistogram(input, outputBase, tempDir.path(), {}), 1);
+    QVERIFY(!QFile::exists(tempDir.filePath(QStringLiteral("blocked.json"))));
+}
+
+// The host discovers the result through "<output-base>.*" in the request
+// directory, so the only file matching that pattern must be the single result
+// JSON. Distinct attachment names never compete with it.
+void OutputContractTest::testOnlyRequestedExtensionMatchesHostOutputDiscovery()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+    const QString input      = createValidImage(tempDir.path());
+    const QString outputBase = tempDir.filePath(QStringLiteral("abc123"));
+
+    QCOMPARE(executeImageHistogram(input, outputBase, tempDir.path(), {}), 0);
+
+    const QStringList discovered = QDir(tempDir.path()).entryList(
+        QStringList{QStringLiteral("abc123.*")}, QDir::Files, QDir::Time);
+    QCOMPARE(discovered, QStringList{QStringLiteral("abc123.json")});
+
+    QVERIFY(QFile::exists(tempDir.filePath(QStringLiteral("rgb-histogram.png"))));
+    QVERIFY(QFile::exists(tempDir.filePath(QStringLiteral("waveform.png"))));
+    QVERIFY(QFile::exists(tempDir.filePath(QStringLiteral("vectorscope.png"))));
+}
+
+void OutputContractTest::testAlphaImageProducesScopesAndAlphaStatistic()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString input = tempDir.filePath(QStringLiteral("alpha.png"));
+    QImage img(4, 4, QImage::Format_ARGB32);
+    img.fill(QColor(0, 0, 0, 0));
+    img.setPixelColor(0, 0, QColor(255, 0, 0, 128));
+    QVERIFY(img.save(input, "PNG"));
+
+    const QString outputBase = tempDir.filePath(QStringLiteral("alpha_out"));
+    QCOMPARE(executeImageHistogram(input, outputBase, tempDir.path()), 0);
+
+    QFile jsonFile(tempDir.filePath(QStringLiteral("alpha_out.json")));
+    QVERIFY(jsonFile.open(QIODevice::ReadOnly));
+    const auto data = readData(tempDir.filePath(QStringLiteral("alpha_out.json")));
+
+    QCOMPARE(data.value(QStringLiteral("Pixels")).toInteger(), 16);
+    QVERIFY(data.value(QStringLiteral("Alpha Pixels")).toInteger() > 0);
+    // Transparent pixels keep contributing their straight RGB values, exactly
+    // like the histogram statistics have always treated them.
+    QVERIFY(data.value(QStringLiteral("Shadow R")).toInteger() < 16);
+    QVERIFY(QFile::exists(tempDir.filePath(QStringLiteral("waveform.png"))));
+    QVERIFY(QFile::exists(tempDir.filePath(QStringLiteral("vectorscope.png"))));
+}
+
+void OutputContractTest::testHighBitDepthInputIsAnalyzed()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString input = tempDir.filePath(QStringLiteral("deep.png"));
+    QImage img(4, 4, QImage::Format_RGBA64);
+    img.fill(QColor(64, 128, 192, 255));
+    if (!img.save(input, "PNG")) {
+        QSKIP("Qt PNG writer does not support 16-bit images here");
+    }
+
+    const QString outputBase = tempDir.filePath(QStringLiteral("deep_out"));
+    QCOMPARE(executeImageHistogram(input, outputBase, tempDir.path()), 0);
+
+    QFile jsonFile(tempDir.filePath(QStringLiteral("deep_out.json")));
+    QVERIFY(jsonFile.open(QIODevice::ReadOnly));
+    const auto data = readData(tempDir.filePath(QStringLiteral("deep_out.json")));
+
+    QCOMPARE(data.value(QStringLiteral("Pixels")).toInteger(), 16);
+    QVERIFY(data.value(QStringLiteral("Mean R")).toDouble() > 60.0);
+    QVERIFY(data.value(QStringLiteral("Mean R")).toDouble() < 68.0);
+    QVERIFY(data.value(QStringLiteral("Mean B")).toDouble() > 188.0);
+    QVERIFY(data.value(QStringLiteral("Mean B")).toDouble() < 196.0);
+}
+
+void OutputContractTest::testGrayRampStatistics()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString input = tempDir.filePath(QStringLiteral("ramp.png"));
+    QImage img(256, 1, QImage::Format_RGB888);
+    for (int x = 0; x < 256; ++x) {
+        img.setPixelColor(x, 0, QColor(x, x, x));
+    }
+    QVERIFY(img.save(input, "PNG"));
+
+    const QString outputBase = tempDir.filePath(QStringLiteral("ramp_out"));
+    QCOMPARE(executeImageHistogram(input, outputBase, tempDir.path()), 0);
+
+    QFile jsonFile(tempDir.filePath(QStringLiteral("ramp_out.json")));
+    QVERIFY(jsonFile.open(QIODevice::ReadOnly));
+    const auto data = readData(tempDir.filePath(QStringLiteral("ramp_out.json")));
+
+    QCOMPARE(data.value(QStringLiteral("Width")).toInteger(), 256);
+    QCOMPARE(data.value(QStringLiteral("Height")).toInteger(), 1);
+    QCOMPARE(data.value(QStringLiteral("Pixels")).toInteger(), 256);
+    QCOMPARE(data.value(QStringLiteral("Mean R")).toDouble(), 127.5);
+    QCOMPARE(data.value(QStringLiteral("Mean G")).toDouble(), 127.5);
+    QCOMPARE(data.value(QStringLiteral("Mean B")).toDouble(), 127.5);
+    QCOMPARE(data.value(QStringLiteral("Shadow R")).toInteger(), 1);
+    QCOMPARE(data.value(QStringLiteral("Clipped R")).toInteger(), 1);
+}
+
+// The plugin's whole result - statistics rows and the three charts alike - lives
+// in the single subgroup titled after the plugin, and nothing leaks to the top
+// level of `data`.
+void OutputContractTest::testPluginGroupHoldsEveryRowAndChart()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    const QString input      = createValidImage(tempDir.path());
+    const QString outputBase = tempDir.filePath(QStringLiteral("group"));
+
+    QCOMPARE(executeImageHistogram(input, outputBase, tempDir.path()), 0);
+
+    const QString jsonPath = tempDir.filePath(QStringLiteral("group.json"));
+    const auto envelope    = readEnvelope(jsonPath);
+    QVERIFY(envelope.contains(imageScopesGroupTitle()));
+    // `data` carries exactly one key: the plugin's own subgroup.
+    QVERIFY(envelope.size() == 1);
+
+    // The subgroup value is an array of one-key fields in the plugin's own
+    // order - statistics, then the three charts. That sequence is the contract.
+    const auto sequence
+        = envelope.value(imageScopesGroupTitle())
+              .toObject()
+              .value(QStringLiteral("value"))
+              .toArray();
+    QStringList keys;
+    for (const auto &item : sequence) {
+        keys.append(item.toObject().keys());
+    }
+    QCOMPARE(keys.join(QLatin1Char(',')),
+             QStringLiteral("Width,Height,Pixels,Mean R,Mean G,Mean B,"
+                            "Alpha Pixels,Clipped R,Clipped G,Clipped B,"
+                            "Shadow R,Shadow G,Shadow B,Histogram Y Scale,"
+                            "RGB Histogram,Waveform,Vectorscope,"
+                            "Image Scopes Analysis Convention"));
+
+    const auto fields = readData(jsonPath);
+    QVERIFY(fields.contains(QStringLiteral("Width")));
+    QVERIFY(fields.contains(QStringLiteral("Pixels")));
+    QVERIFY(fields.contains(QStringLiteral("Histogram Y Scale")));
+    QVERIFY(fields.contains(QStringLiteral("Image Scopes Analysis Convention")));
+
+    QCOMPARE(fields.value(QStringLiteral("RGB Histogram"))
+                 .toObject()
+                 .value(QStringLiteral("type"))
+                 .toString(),
+             QStringLiteral("image"));
+    QCOMPARE(fields.value(QStringLiteral("Waveform"))
+                 .toObject()
+                 .value(QStringLiteral("type"))
+                 .toString(),
+             QStringLiteral("image"));
+    QCOMPARE(fields.value(QStringLiteral("Vectorscope"))
+                 .toObject()
+                 .value(QStringLiteral("type"))
+                 .toString(),
+             QStringLiteral("image"));
 }
 
 QTEST_MAIN(OutputContractTest)
