@@ -43,3 +43,11 @@ Build and test a package with its own CMake project; see the README in each
 package directory for the exact commands, packaging steps and the documented
 limits of that helper. `scripts/package-plugins.ps1` builds, tests and packages
 every plugin in one step (ZIP plus SHA-256 per package).
+
+## Resources
+
+- [Property plugin development guide](./plugin_development_guide.md)
+- [Official plugin development documentation](https://1218.io/docs/seer/create-plugin#properties)
+- [Official property plugin downloads](https://1218.io/docs/seer/download#properties)
+- [Seer Plugins (Viewers)](https://github.com/ccseer/Seer-plugins)
+- [Seer Controls](https://github.com/ccseer/Seer-Controls)
