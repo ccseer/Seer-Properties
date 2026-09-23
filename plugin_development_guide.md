@@ -87,8 +87,13 @@ The result file `${output_file}.json` must be strictly valid UTF-8 JSON matching
 
 ### 2. Output Formats
 
+A result is either **one flat row** or **exactly one subgroup** titled after the
+plugin. Anything that produces more than one row must be published as a single
+subgroup: loose top-level rows collide with the rows of every other plugin in the
+Inspector, which shows them all in one list.
+
 #### Form A: Flat Key-Value Rows
-Used when the entire plugin produces only one or two simple rows (e.g. `SHA-256`):
+Only when the whole result is a **single row** (e.g. `SHA-256`):
 ```json
 {
   "result_schema": 1,
@@ -98,25 +103,10 @@ Used when the entire plugin produces only one or two simple rows (e.g. `SHA-256`
 }
 ```
 
-#### Form B: Subgroup Rows (Recommended)
-Encapsulating output inside a subgroup titled after the plugin namespaces rows and prevents key collisions across plugins:
-```json
-{
-  "result_schema": 1,
-  "data": {
-    "Git": {
-      "value": {
-        "Branch": "main",
-        "Upstream": "origin/main",
-        "Status": "Clean"
-      }
-    }
-  }
-}
-```
-
-#### Form C: Subgroup with Ordered Array of Single-Key Objects (Recommended for Strict Sequencing)
-When row order in the UI must be deterministic, supply `value` as an array of single-key objects:
+#### Form B: Subgroup with an Ordered Array of Single-Key Objects (Default)
+Publish `value` as an array of one-key objects. The array order is the render
+order, so this is the only form that lets the plugin decide the sequence the rows
+appear in:
 ```json
 {
   "result_schema": 1,
@@ -128,6 +118,25 @@ When row order in the UI must be deterministic, supply `value` as an array of si
         { "Ahead / Behind": "0 / 0" },
         { "Status": "Working tree clean" }
       ]
+    }
+  }
+}
+```
+
+#### Form C: Subgroup with a Value Object
+`value` may also be a plain object, but its rows are rendered in the key order of
+the parsed object, which the plugin cannot control. Use it only when row order
+does not matter:
+```json
+{
+  "result_schema": 1,
+  "data": {
+    "Git": {
+      "value": {
+        "Branch": "main",
+        "Upstream": "origin/main",
+        "Status": "Clean"
+      }
     }
   }
 }
