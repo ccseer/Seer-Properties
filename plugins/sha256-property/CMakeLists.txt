@@ -18,33 +18,19 @@ add_executable(sha256_property_test test/sha256_test.cpp)
 target_link_libraries(sha256_property_test PRIVATE sha256_core)
 add_test(NAME sha256_property_test COMMAND sha256_property_test)
 
-set(SHA256_PROPERTY_MANIFEST_STAGING_DIR ${CMAKE_CURRENT_BINARY_DIR}/manifest-stage)
-add_custom_command(
-    OUTPUT
-        ${SHA256_PROPERTY_MANIFEST_STAGING_DIR}/plugin.json
-        ${SHA256_PROPERTY_MANIFEST_STAGING_DIR}/sha256_property.exe
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${SHA256_PROPERTY_MANIFEST_STAGING_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/plugin.json
-        ${SHA256_PROPERTY_MANIFEST_STAGING_DIR}/plugin.json
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:sha256_property>
-        ${SHA256_PROPERTY_MANIFEST_STAGING_DIR}/sha256_property.exe
-    DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/plugin.json
-        sha256_property
-    VERBATIM
-)
-add_custom_target(sha256_property_manifest_stage
-    DEPENDS
-        ${SHA256_PROPERTY_MANIFEST_STAGING_DIR}/plugin.json
-        ${SHA256_PROPERTY_MANIFEST_STAGING_DIR}/sha256_property.exe
-)
-
 add_executable(sha256_property_manifest_test test/manifest_test.cpp)
-add_dependencies(sha256_property_manifest_test sha256_property_manifest_stage)
-add_test(NAME sha256_property_manifest_test
-         COMMAND sha256_property_manifest_test ${SHA256_PROPERTY_MANIFEST_STAGING_DIR})
 
-install(TARGETS sha256_property RUNTIME DESTINATION .)
-install(FILES plugin.json DESTINATION .)
+# Stages plugin.json, the helper and PACKAGE_README.md (as README.md) so the
+# manifest test and the installed package both cover the shipped layout.
+set(SHA256_PROPERTY_MANIFEST_STAGING_DIR ${CMAKE_CURRENT_BINARY_DIR}/manifest-stage)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../common/PackageStaging.cmake)
+seer_property_package_staging(
+    PACKAGE_ID io.1218.seer.sha256-property
+    PACKAGE_NAME "SHA-256"
+    COMMAND_NAME sha256_property.exe
+    COMMAND_TARGET sha256_property
+    TEST_TARGET sha256_property_manifest_test
+    STAGE_TARGET sha256_property_manifest_stage
+    PACKAGE_TARGET sha256_property_package
+    STAGING_DIR ${SHA256_PROPERTY_MANIFEST_STAGING_DIR}
+)

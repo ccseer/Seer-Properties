@@ -20,9 +20,15 @@ plugins/<package>/
   test/           unit, contract and integration tests
   CMakeLists.txt  standalone CMake project with CTest tests
   README.md       per-package interface, limits, build and packaging steps
+  PACKAGE_README.md  shipped user-facing readme: what the plugin does and every
+                     option its helper accepts. Staged and installed as
+                     README.md, so it is the copy that lands in the ZIP.
 plugins/common/propertycommon.h    header-only helpers shared by the non-Qt
                                    packages (path containment, .json suffix,
                                    atomic JSON publication)
+plugins/common/PackageStaging.cmake   shared CMake function that stages and
+                                   installs plugin.json, the helper and
+                                   README.md into one flat package root
 plugins/third_party/nlohmann/json.hpp   single-header JSON (build-time only)
 docs/CONTRACT_NOTES.md   host-alignment findings; read before touching helpers
 docs/RESULTS.md          verification report for the current plugin set
@@ -97,6 +103,18 @@ Current packages: `image-histogram-property`, `sha256-property`,
 - Schema-1 subgroup values must be flat strings; the host drops anything
   else inside a subgroup `value` object. Only `type: "image"` is a realised
   typed value.
+- **Shipped package README.** Every package owns a `PACKAGE_README.md`: one
+  short paragraph describing what the plugin reports, followed by an
+  "Options & Arguments" table covering every option the helper accepts (option,
+  accepted values, default, purpose). `seer_property_package_staging` in
+  `plugins/common/PackageStaging.cmake` stages it and installs it as
+  `README.md` next to `plugin.json`, so it is packed into the distributable
+  ZIP, and each `*_manifest_test` asserts the staged copy exists and is
+  non-empty. Update `PACKAGE_README.md` in the same change whenever the CLI
+  surface moves — an option added, removed, renamed, re-defaulted, or given a
+  different set of accepted values — and whenever the user-visible behavior
+  changes. The developer `README.md` is not shipped and never substitutes for
+  it.
 - Comments, identifiers and log strings are English throughout.
 
 ## 4. Temporary and Intermediate File Location Policy
@@ -188,8 +206,8 @@ archive is verified at build time, so a committed sidecar could only go stale.
   the manifest contract end-to-end; extend them whenever the manifest or CLI
   surface changes.
 - Verify the final ZIP layout before distributing: exactly one package-root
-  `plugin.json`, the helper, required runtime assets, no build/test tree, no
-  accidental outer directory.
+  `plugin.json`, the helper, `README.md` (from `PACKAGE_README.md`), required
+  runtime assets, no build/test tree, no accidental outer directory.
 - Package ZIPs at the maximum compression level: `7z a -tzip -mx=9` (7-Zip), or
   `-CompressionLevel Optimal` for `Compress-Archive` (equivalent to .NET
   `CompressionLevel::Optimal`). Never ship `Fastest`/`NoCompression` (store)
@@ -201,8 +219,8 @@ archive is verified at build time, so a committed sidecar could only go stale.
   an archive or a checksum file for one. A successful packaging run deletes the
   package's other archives, so a manual install cannot pick a stale version.
 - Bump the package `version` in `plugin.json` when behavior changes, and
-  update that package's README in the same change. Extend
-  `docs/CONTRACT_NOTES.md` (never contradict it) when a host-alignment
+  update that package's `README.md` and `PACKAGE_README.md` in the same change.
+  Extend `docs/CONTRACT_NOTES.md` (never contradict it) when a host-alignment
   finding is discovered.
 
 ## 6. Dependency Policy

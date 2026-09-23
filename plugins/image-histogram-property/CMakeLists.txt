@@ -78,34 +78,20 @@ add_executable(image_histogram_manifest_test
 target_include_directories(image_histogram_manifest_test PRIVATE src)
 target_link_libraries(image_histogram_manifest_test PRIVATE Qt6::Core Qt6::Gui)
 
+# Stages plugin.json, the helper and PACKAGE_README.md (as README.md) so the
+# manifest test and the installed package both cover the shipped layout.
 set(IMAGE_HISTOGRAM_MANIFEST_STAGING_DIR ${CMAKE_CURRENT_BINARY_DIR}/manifest-stage)
-add_custom_command(
-    OUTPUT
-        ${IMAGE_HISTOGRAM_MANIFEST_STAGING_DIR}/plugin.json
-        ${IMAGE_HISTOGRAM_MANIFEST_STAGING_DIR}/image_histogram.exe
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${IMAGE_HISTOGRAM_MANIFEST_STAGING_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/plugin.json
-        ${IMAGE_HISTOGRAM_MANIFEST_STAGING_DIR}/plugin.json
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:image_histogram>
-        ${IMAGE_HISTOGRAM_MANIFEST_STAGING_DIR}/image_histogram.exe
-    DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/plugin.json
-        image_histogram
-    VERBATIM
+include(${CMAKE_CURRENT_SOURCE_DIR}/../common/PackageStaging.cmake)
+seer_property_package_staging(
+    PACKAGE_ID io.1218.seer.image-histogram
+    PACKAGE_NAME "Image Scopes"
+    COMMAND_NAME image_histogram.exe
+    COMMAND_TARGET image_histogram
+    TEST_TARGET image_histogram_manifest_test
+    STAGE_TARGET image_histogram_manifest_stage
+    PACKAGE_TARGET image_histogram_package
+    STAGING_DIR ${IMAGE_HISTOGRAM_MANIFEST_STAGING_DIR}
 )
-add_custom_target(image_histogram_manifest_stage
-    DEPENDS
-        ${IMAGE_HISTOGRAM_MANIFEST_STAGING_DIR}/plugin.json
-        ${IMAGE_HISTOGRAM_MANIFEST_STAGING_DIR}/image_histogram.exe
-)
-add_dependencies(image_histogram_manifest_test image_histogram_manifest_stage)
-add_test(NAME image_histogram_manifest_test
-         COMMAND image_histogram_manifest_test ${IMAGE_HISTOGRAM_MANIFEST_STAGING_DIR})
 set_tests_properties(image_histogram_manifest_test PROPERTIES
     ENVIRONMENT "PATH=${QT_BIN_DIR};$ENV{PATH}"
 )
-
-install(TARGETS image_histogram RUNTIME DESTINATION .)
-install(FILES plugin.json DESTINATION .)

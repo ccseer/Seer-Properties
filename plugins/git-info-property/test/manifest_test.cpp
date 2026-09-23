@@ -183,6 +183,13 @@ int main(int argc, char *argv[])
         check(false, "arguments use input_file/output_file/output_dir");
     }
 
+    const std::wstring readmePath
+        = widen(packageRoot) + L"\\README.md";
+    check(pathExists(readmePath), "staged README.md exists in the package root");
+    if (pathExists(readmePath)) {
+        check(!readAll(readmePath).empty(), "staged README.md is non-empty");
+    }
+
     const std::wstring executablePath
         = widen(packageRoot) + L"\\git_info.exe";
     check(pathExists(executablePath), "staged helper exists in the package root");

@@ -331,6 +331,16 @@ int main(int argc, char *argv[])
               "staged plugin.json exists");
         check(std::filesystem::is_regular_file(executablePath),
               "staged helper exists");
+        const auto readmePath   = stagingRoot / "README.md";
+        const bool readmePresent
+            = std::filesystem::is_regular_file(readmePath);
+        check(readmePresent, "staged README.md exists");
+        if (readmePresent) {
+            std::ifstream readmeFile(readmePath, std::ios::binary);
+            const std::string readmeText(
+                (std::istreambuf_iterator<char>(readmeFile)), {});
+            check(!readmeText.empty(), "staged README.md is non-empty");
+        }
         check(isWithin(stagingRoot,
                        std::filesystem::weakly_canonical(executablePath)),
               "staged helper remains inside package");

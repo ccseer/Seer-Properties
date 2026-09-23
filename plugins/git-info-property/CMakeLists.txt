@@ -71,35 +71,21 @@ add_executable(git_info_real_git_test
 target_link_libraries(git_info_real_git_test PRIVATE git_info_core)
 add_test(NAME git_info_real_git_test COMMAND git_info_real_git_test)
 
-set(GIT_INFO_MANIFEST_STAGING_DIR ${CMAKE_CURRENT_BINARY_DIR}/manifest-stage)
-add_custom_command(
-    OUTPUT
-        ${GIT_INFO_MANIFEST_STAGING_DIR}/plugin.json
-        ${GIT_INFO_MANIFEST_STAGING_DIR}/git_info.exe
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${GIT_INFO_MANIFEST_STAGING_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/plugin.json
-        ${GIT_INFO_MANIFEST_STAGING_DIR}/plugin.json
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:git_info>
-        ${GIT_INFO_MANIFEST_STAGING_DIR}/git_info.exe
-    DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/plugin.json
-        git_info
-    VERBATIM
-)
-add_custom_target(git_info_manifest_stage
-    DEPENDS
-        ${GIT_INFO_MANIFEST_STAGING_DIR}/plugin.json
-        ${GIT_INFO_MANIFEST_STAGING_DIR}/git_info.exe
-)
-
 add_executable(git_info_manifest_test test/manifest_test.cpp)
 target_include_directories(git_info_manifest_test PRIVATE src)
 target_include_directories(git_info_manifest_test PRIVATE ${NLOHMANN_INCLUDE_DIR})
-add_dependencies(git_info_manifest_test git_info_manifest_stage)
-add_test(NAME git_info_manifest_test
-         COMMAND git_info_manifest_test ${GIT_INFO_MANIFEST_STAGING_DIR})
 
-install(TARGETS git_info RUNTIME DESTINATION .)
-install(FILES plugin.json DESTINATION .)
+# Stages plugin.json, the helper and PACKAGE_README.md (as README.md) so the
+# manifest test and the installed package both cover the shipped layout.
+set(GIT_INFO_MANIFEST_STAGING_DIR ${CMAKE_CURRENT_BINARY_DIR}/manifest-stage)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../common/PackageStaging.cmake)
+seer_property_package_staging(
+    PACKAGE_ID io.1218.seer.git-info
+    PACKAGE_NAME "Git Info"
+    COMMAND_NAME git_info.exe
+    COMMAND_TARGET git_info
+    TEST_TARGET git_info_manifest_test
+    STAGE_TARGET git_info_manifest_stage
+    PACKAGE_TARGET git_info_package
+    STAGING_DIR ${GIT_INFO_MANIFEST_STAGING_DIR}
+)

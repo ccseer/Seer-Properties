@@ -47,35 +47,21 @@ add_executable(digital_signature_output_test
 target_link_libraries(digital_signature_output_test PRIVATE digital_signature_core)
 add_test(NAME digital_signature_output_test COMMAND digital_signature_output_test)
 
-set(DIGITAL_SIGNATURE_MANIFEST_STAGING_DIR ${CMAKE_CURRENT_BINARY_DIR}/manifest-stage)
-add_custom_command(
-    OUTPUT
-        ${DIGITAL_SIGNATURE_MANIFEST_STAGING_DIR}/plugin.json
-        ${DIGITAL_SIGNATURE_MANIFEST_STAGING_DIR}/digital_signature.exe
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${DIGITAL_SIGNATURE_MANIFEST_STAGING_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/plugin.json
-        ${DIGITAL_SIGNATURE_MANIFEST_STAGING_DIR}/plugin.json
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:digital_signature>
-        ${DIGITAL_SIGNATURE_MANIFEST_STAGING_DIR}/digital_signature.exe
-    DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/plugin.json
-        digital_signature
-    VERBATIM
-)
-add_custom_target(digital_signature_manifest_stage
-    DEPENDS
-        ${DIGITAL_SIGNATURE_MANIFEST_STAGING_DIR}/plugin.json
-        ${DIGITAL_SIGNATURE_MANIFEST_STAGING_DIR}/digital_signature.exe
-)
-
 add_executable(digital_signature_manifest_test test/manifest_test.cpp)
 target_include_directories(digital_signature_manifest_test PRIVATE src)
 target_include_directories(digital_signature_manifest_test PRIVATE ${NLOHMANN_INCLUDE_DIR})
-add_dependencies(digital_signature_manifest_test digital_signature_manifest_stage)
-add_test(NAME digital_signature_manifest_test
-         COMMAND digital_signature_manifest_test ${DIGITAL_SIGNATURE_MANIFEST_STAGING_DIR})
 
-install(TARGETS digital_signature RUNTIME DESTINATION .)
-install(FILES plugin.json DESTINATION .)
+# Stages plugin.json, the helper and PACKAGE_README.md (as README.md) so the
+# manifest test and the installed package both cover the shipped layout.
+set(DIGITAL_SIGNATURE_MANIFEST_STAGING_DIR ${CMAKE_CURRENT_BINARY_DIR}/manifest-stage)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../common/PackageStaging.cmake)
+seer_property_package_staging(
+    PACKAGE_ID io.1218.seer.digital-signature
+    PACKAGE_NAME "Digital Signature"
+    COMMAND_NAME digital_signature.exe
+    COMMAND_TARGET digital_signature
+    TEST_TARGET digital_signature_manifest_test
+    STAGE_TARGET digital_signature_manifest_stage
+    PACKAGE_TARGET digital_signature_package
+    STAGING_DIR ${DIGITAL_SIGNATURE_MANIFEST_STAGING_DIR}
+)

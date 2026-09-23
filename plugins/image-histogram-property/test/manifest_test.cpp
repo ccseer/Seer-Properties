@@ -154,6 +154,15 @@ int main(int argc, char *argv[])
     check(exitCodes.size() == 1 && exitCodes.first().toInt() == 0,
           "success_exit_codes contains 0");
 
+    const QString readmePath = rootDir.filePath(QStringLiteral("README.md"));
+    check(QFileInfo(readmePath).isFile(),
+          "staged README.md exists in the package root");
+    if (QFileInfo(readmePath).isFile()) {
+        QFile readme(readmePath);
+        check(readme.open(QIODevice::ReadOnly) && !readme.readAll().isEmpty(),
+              "staged README.md is non-empty");
+    }
+
     const QString exePath = rootDir.filePath(command);
     check(QFileInfo(exePath).isFile(),
           "staged helper exists in the package root");
