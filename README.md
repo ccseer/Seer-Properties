@@ -12,7 +12,7 @@ runtime assets that helper needs.
 | Package | ID | Matches | What it reports |
 |---|---|---|---|
 | [Image Scopes](./plugins/image-histogram-property) | `io.1218.seer.image-histogram` | `png jpg jpeg bmp webp tif tiff` | RGB histogram, luma waveform, Cb/Cr vectorscope, exposure statistics |
-| [SHA-256](./plugins/sha256-property) | `io.1218.seer.sha256-property` | every file (`${type_file}`) | SHA-256 digest |
+| [File Hashes](./plugins/sha256-property) | `io.1218.seer.sha256-property` | every file (`${type_file}`) | SHA-256 digest by default; more algorithms selectable via arguments |
 | [Git Info](./plugins/git-info-property) | `io.1218.seer.git-info` | folders (`${type_folder}`) | repository, branch, upstream, ahead/behind, change counts |
 | [Digital Signature](./plugins/digital-signature-property) | `io.1218.seer.digital-signature` | `dll exe` | Authenticode verdict, signer certificate metadata |
 
@@ -26,7 +26,9 @@ runtime assets that helper needs.
 * `image-histogram-property` additionally uses Qt 6.8 (Core/Gui) because it
   decodes image formats and rasterises charts; `windeployqt` supplies the
   required runtime assets at packaging time.
-* `sha256-property` uses the Win32 BCrypt API only.
+* `sha256-property` uses the Win32 BCrypt API plus the vendored xxHash,
+  BLAKE3 and SHA-3 sources listed below; it also links the static CRT and ships
+  as one self-contained executable.
 
 ## Source layout
 
@@ -37,6 +39,9 @@ plugins/<package>/
   test/           unit, contract and integration tests
   CMakeLists.txt  standalone CMake project with CTest tests
 plugins/third_party/nlohmann/json.hpp   single-header JSON (build-time only)
+plugins/third_party/xxhash/             vendored xxHash (XXH64, header-only)
+plugins/third_party/blake3/             vendored BLAKE3 portable C reference
+plugins/third_party/sha3/               vendored tiny_sha3 (SHA-3/Keccak reference)
 ```
 
 Build and test a package with its own CMake project; see the README in each

@@ -30,6 +30,9 @@ plugins/common/PackageStaging.cmake   shared CMake function that stages and
                                    installs plugin.json, the helper and
                                    README.md into one flat package root
 plugins/third_party/nlohmann/json.hpp   single-header JSON (build-time only)
+plugins/third_party/xxhash/             vendored xxHash v0.8.2 (XXH64, header-only)
+plugins/third_party/blake3/             vendored BLAKE3 1.8.2 portable C reference
+plugins/third_party/sha3/               vendored tiny_sha3 (SHA-3/Keccak reference)
 docs/CONTRACT_NOTES.md   host-alignment findings; read before touching helpers
 docs/RESULTS.md          verification report for the current plugin set
 ```
@@ -56,12 +59,13 @@ must not drift between packages:
   (`Git`, `Image Scopes`, `Digital Signature`), so the Inspector shows one
   section per plugin instead of loose rows that could collide across plugins.
   The subgroup's `value` is an **array of one-key fields** and the array order is
-  the render order. A package whose whole result is a single row
-  (`sha256-property`) keeps the flat form. Charts inside a subgroup need a host
-  that resolves typed values there (the 2026-09-21 host change); a host built
-  before it collapses the array into a single empty text row, so the owning
-  package's `appMinVersion` has to be raised to the first host release that
-  carries the change.
+  the render order. `sha256-property` keeps the flat single-row form while one
+  algorithm is selected (the default) and groups several selected algorithms
+  into one `Hashes` subgroup in its fixed priority order. Charts inside a
+  subgroup need a host that resolves typed values there (the 2026-09-21 host
+  change); a host built before it collapses the array into a single empty text
+  row, so the owning package's `appMinVersion` has to be raised to the first
+  host release that carries the change.
 
 Current packages: `image-histogram-property`, `sha256-property`,
 `git-info-property`, `digital-signature-property`.
@@ -70,11 +74,9 @@ Current packages: `image-histogram-property`, `sha256-property`,
 
 - Preserve the Canonical v1 contract: `backend: "process"`,
   `capabilities: ["property"]`, `result_schema: 1` (must be the integer `1`
-  for Property), `invocations` present. The flat
-  `command`/`arguments` CLI form exists only in the reference
-  `sha256-property` package; new packages declare `invocations`. All property
-  packages are current, actively maintained work — there are no legacy
-  property packages.
+  for Property), `invocations` present. Every current package declares
+  `invocations`; all property packages are actively maintained work — there
+  are no legacy property packages.
 - Manifest invariants: `schema_version` is `1`; `id` matches
   `^[a-z0-9]([a-z0-9_-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9_-]*[a-z0-9])?)+$`;
   `version` and `appMinVersion` are three-segment strings. Keep the package
@@ -228,7 +230,11 @@ archive is verified at build time, so a committed sidecar could only go stale.
 - `git-info-property` and `digital-signature-property`: C++ standard
   library (C++17), vendored nlohmann/json, Win32 API (Windows 10+) only.
   Static CRT, one self-contained executable each.
-- `sha256-property`: Win32 BCrypt API (Windows 10+) only.
+- `sha256-property`: Win32 BCrypt/CNG for SHA-256, SHA-384 and
+  SHA-512; hand-rolled CRC-32 and CRC-64/XZ; vendored third-party sources for
+  xxHash (XXH64), BLAKE3 (portable reference) and SHA-3-256 (Keccak reference);
+  vendored nlohmann/json for the result serialization. Static CRT, one
+  self-contained executable.
 - `image-histogram-property`: Qt 6.8 (Core/Gui); `windeployqt` supplies the
   runtime assets at packaging time.
 - Third-party libraries are allowed, but prefer libraries that can be

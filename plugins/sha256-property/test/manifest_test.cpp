@@ -289,13 +289,16 @@ std::filesystem::path tempDirectory()
 bool runHelper(const std::filesystem::path &executable,
                const std::filesystem::path &input,
                const std::filesystem::path &outputBase,
-               const std::wstring &outputCase = {})
+               const std::wstring &outputCase = {},
+               const std::wstring &algorithms = {})
 {
     std::wstring command = L"\"" + executable.wstring() + L"\" --input \""
                            + input.wstring() + L"\" --output \""
                            + outputBase.wstring() + L"\"";
     if (!outputCase.empty())
         command += L" --case " + outputCase;
+    if (!algorithms.empty())
+        command += L" --algorithms " + algorithms;
     std::vector<wchar_t> commandLine(command.begin(), command.end());
     commandLine.push_back(L'\0');
     STARTUPINFOW startup{sizeof(startup)};
@@ -311,6 +314,12 @@ bool runHelper(const std::filesystem::path &executable,
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
     return exitCode == 0;
+}
+
+std::string readFile(const std::filesystem::path &path)
+{
+    std::ifstream file(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(file), {}};
 }
 }  // namespace
 
@@ -363,12 +372,12 @@ int main(int argc, char *argv[])
               "manifest id is fixed");
         check(member(root, "name")
                   && member(root, "name")->kind == JsonValue::Kind::String
-                  && member(root, "name")->stringValue == "SHA-256",
-              "manifest name is SHA-256");
+                  && member(root, "name")->stringValue == "File Hashes",
+              "manifest name is File Hashes");
         check(member(root, "version")
                   && member(root, "version")->kind == JsonValue::Kind::String
-                  && member(root, "version")->stringValue == "1.0.0",
-              "manifest version is 1.0.0");
+                  && member(root, "version")->stringValue == "1.1.0",
+              "manifest version is 1.1.0");
         check(member(root, "appMinVersion")
                   && member(root, "appMinVersion")->kind
                          == JsonValue::Kind::String
@@ -381,26 +390,36 @@ int main(int argc, char *argv[])
               "capabilities contains only property");
         check(exactStringArray(member(root, "extensions"), {"${type_file}"}),
               "extensions contains the file type token");
-        check(member(root, "command")
-                  && member(root, "command")->kind == JsonValue::Kind::String
-                  && member(root, "command")->stringValue
-                         == "sha256_property.exe",
+
+        const auto invocations = member(root, "invocations");
+        check(invocations && invocations->kind == JsonValue::Kind::Object,
+              "invocations object is present");
+        const auto property = member(*invocations, "property");
+        check(property && property->kind == JsonValue::Kind::Object,
+              "property invocation is present");
+        const auto command = member(*property, "command");
+        check(command && command->kind == JsonValue::Kind::String
+                  && command->stringValue == "sha256_property.exe",
               "command names sha256_property.exe");
-        const auto command = member(root, "command");
         if (command && command->kind == JsonValue::Kind::String) {
             const std::filesystem::path commandPath(command->stringValue);
             check(!commandPath.is_absolute() && !commandPath.has_parent_path(),
                   "command is package-relative");
         }
         check(exactStringArray(
-                  member(root, "arguments"),
+                  member(*property, "arguments"),
                   {"--input", "${input_file}", "--output", "${output_file}"}),
               "arguments use input and output base tokens");
-        check(member(root, "timeout_ms")
-                  && member(root, "timeout_ms")->kind == JsonValue::Kind::Number
-                  && member(root, "timeout_ms")->stringValue == "120000",
+        check(member(*property, "result_schema")
+                  && member(*property, "result_schema")->kind
+                         == JsonValue::Kind::Number
+                  && member(*property, "result_schema")->stringValue == "1",
+              "result schema is 1");
+        check(member(*property, "timeout_ms")
+                  && member(*property, "timeout_ms")->kind == JsonValue::Kind::Number
+                  && member(*property, "timeout_ms")->stringValue == "120000",
               "timeout is 120000 milliseconds");
-        check(exactNumberArray(member(root, "success_exit_codes"), {"0"}),
+        check(exactNumberArray(member(*property, "success_exit_codes"), {"0"}),
               "success exit codes contains only zero");
 
         const auto directory  = tempDirectory();
@@ -414,21 +433,25 @@ int main(int argc, char *argv[])
               "staged helper runs successfully");
         check(std::filesystem::is_regular_file(outputPath),
               "helper produces <base-path>.json");
-        std::ifstream output(outputPath, std::ios::binary);
-        const std::string text((std::istreambuf_iterator<char>(output)), {});
-        check(text == "{\"SHA-256\":\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\"}\n",
-              "helper output has the required SHA-256 JSON shape");
-        output.close();
+        check(readFile(outputPath)
+                  == "{\"result_schema\":1,\"data\":{\"SHA-256\":\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\"}}\n",
+              "helper output is the schema-1 envelope with one flat row");
         for (const auto outputCase : {L"lower", L"upper"}) {
             check(runHelper(executablePath, input, outputBase, outputCase),
                   "packaged helper accepts the case option");
-            std::ifstream caseOutput(outputPath, std::ios::binary);
-            const std::string actual((std::istreambuf_iterator<char>(caseOutput)), {});
             const auto expected = std::wstring(outputCase) == L"upper"
-                ? "{\"SHA-256\":\"BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD\"}\n"
-                : "{\"SHA-256\":\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\"}\n";
-            check(actual == expected, "packaged helper produces the requested case");
+                ? "{\"result_schema\":1,\"data\":{\"SHA-256\":\"BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD\"}}\n"
+                : "{\"result_schema\":1,\"data\":{\"SHA-256\":\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\"}}\n";
+            check(readFile(outputPath) == expected,
+                  "packaged helper produces the requested case");
         }
+        const auto groupOutputBase = directory / L"grouped";
+        check(runHelper(executablePath, input, groupOutputBase, {},
+                        L"blake3,crc32"),
+              "packaged helper accepts the algorithms option");
+        check(readFile(groupOutputBase.wstring() + L".json")
+                  == "{\"result_schema\":1,\"data\":{\"Hashes\":{\"value\":[{\"CRC32\":\"352441c2\"},{\"BLAKE3\":\"6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85\"}]}}}\n",
+              "several algorithms are grouped into one ordered subgroup");
         std::filesystem::remove_all(directory);
     }
     catch (const std::exception &error) {

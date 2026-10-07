@@ -3,14 +3,21 @@
 #include <windows.h>
 #include <bcrypt.h>
 
-#include <array>
+#include <nlohmann/json.hpp>
+
 #include <filesystem>
 #include <iostream>
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
 namespace {
+
 constexpr DWORD kReadBufferSize = 1024 * 1024;
+
+// Subgroup title used when several algorithms are published in one group.
+const char* const kHashGroupTitle = "Hashes";
 
 std::wstring win32Error(const wchar_t* operation, DWORD code = GetLastError())
 {
@@ -58,10 +65,72 @@ std::wstring outputPathFor(const std::wstring& base)
     return base + suffix;
 }
 
+// Parses the comma-separated algorithm list. Names are case-insensitive and
+// may carry surrounding spaces; the special name "all" is only accepted as
+// the single token of the list. Duplicate names collapse into one selection,
+// and the resulting order is always the canonical algorithm order.
+bool parseAlgorithmList(const std::wstring& value, std::vector<HashAlgorithm>& selected)
+{
+    std::set<HashAlgorithm> chosen;
+    bool sawAll = false;
+    std::size_t tokenCount = 0;
+    std::size_t begin = 0;
+    for (;;) {
+        const std::size_t comma = value.find(L',', begin);
+        const std::wstring token = value.substr(
+            begin, comma == std::wstring::npos ? std::wstring::npos : comma - begin);
+        std::size_t first = 0;
+        std::size_t last = token.size();
+        while (first < last && (token[first] == L' ' || token[first] == L'\t'))
+            ++first;
+        while (last > first && (token[last - 1] == L' ' || token[last - 1] == L'\t'))
+            --last;
+        const std::wstring trimmed = token.substr(first, last - first);
+        if (trimmed.empty())
+            return false;
+        if (lowerAscii(trimmed) == L"all") {
+            if (tokenCount > 0)
+                return false;
+            sawAll = true;
+        } else {
+            HashAlgorithm parsed = HashAlgorithm::Sha256;
+            if (sawAll || !hashAlgorithmFromName(trimmed, parsed))
+                return false;
+            chosen.insert(parsed);
+        }
+        ++tokenCount;
+        if (comma == std::wstring::npos)
+            break;
+        begin = comma + 1;
+    }
+
+    selected.clear();
+    if (sawAll) {
+        selected = allHashAlgorithms();
+        return true;
+    }
+    for (const HashAlgorithm algorithm : allHashAlgorithms()) {
+        if (chosen.count(algorithm) != 0)
+            selected.push_back(algorithm);
+    }
+    return !selected.empty();
+}
+
+// Algorithm labels are ASCII, so narrowing for the JSON serializer is safe.
+std::string narrowLabel(const std::wstring& label)
+{
+    std::string narrow;
+    narrow.reserve(label.size());
+    for (const wchar_t character : label)
+        narrow.push_back(static_cast<char>(character));
+    return narrow;
+}
+
 }
 
 bool parseArguments(const std::vector<std::wstring>& arguments, std::wstring& input,
-                    std::wstring& output, OutputCase& outputCase)
+                    std::wstring& output, OutputCase& outputCase,
+                    std::vector<HashAlgorithm>& algorithms)
 {
     outputCase = OutputCase::Lower;
     if (arguments.size() < 5 || arguments.size() % 2 == 0)
@@ -69,6 +138,7 @@ bool parseArguments(const std::vector<std::wstring>& arguments, std::wstring& in
     bool inputSeen = false;
     bool outputSeen = false;
     bool caseSeen = false;
+    bool algorithmsSeen = false;
     for (size_t index = 1; index + 1 < arguments.size(); index += 2) {
         const auto& option = arguments[index];
         const auto& value = arguments[index + 1];
@@ -89,16 +159,25 @@ bool parseArguments(const std::vector<std::wstring>& arguments, std::wstring& in
                 return false;
             }
             caseSeen = true;
+        } else if (option == L"--algorithms" && !algorithmsSeen) {
+            if (!parseAlgorithmList(value, algorithms))
+                return false;
+            algorithmsSeen = true;
         } else {
             return false;
         }
     }
-    return inputSeen && outputSeen;
+    if (!inputSeen || !outputSeen)
+        return false;
+    if (!algorithmsSeen)
+        algorithms.assign(1, HashAlgorithm::Sha256);
+    return true;
 }
 
-Sha256Result hashFile(const std::wstring& inputPath)
+HashFileResult hashFile(const std::wstring& inputPath,
+                        const std::vector<HashAlgorithm>& algorithms)
 {
-    Sha256Result result;
+    HashFileResult result;
     const auto file = CreateFileW(inputPath.c_str(), GENERIC_READ,
                                   FILE_SHARE_READ | FILE_SHARE_WRITE,
                                   nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -115,26 +194,17 @@ Sha256Result hashFile(const std::wstring& inputPath)
         return result;
     }
 
-    BCRYPT_ALG_HANDLE algorithm = nullptr;
-    BCRYPT_HASH_HANDLE hash = nullptr;
-    DWORD objectLength = 0;
-    DWORD bytesReturned = 0;
-    NTSTATUS status = BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
-    if (status == 0)
-        status = BCryptGetProperty(algorithm, BCRYPT_OBJECT_LENGTH,
-                                   reinterpret_cast<PUCHAR>(&objectLength), sizeof(objectLength),
-                                   &bytesReturned, 0);
-    std::vector<UCHAR> object(objectLength);
-    if (status == 0)
-        status = BCryptCreateHash(algorithm, &hash, object.data(), objectLength, nullptr, 0, 0);
-    if (status != 0) {
-        result.error = L"Windows CNG initialization failed";
-        if (hash != nullptr)
-            BCryptDestroyHash(hash);
-        if (algorithm != nullptr)
-            BCryptCloseAlgorithmProvider(algorithm, 0);
-        CloseHandle(file);
-        return result;
+    std::vector<std::unique_ptr<HashSink>> sinks;
+    sinks.reserve(algorithms.size());
+    for (const HashAlgorithm algorithm : algorithms) {
+        std::unique_ptr<HashSink> sink;
+        std::wstring error;
+        if (!createHashSink(algorithm, sink, error)) {
+            result.error = error;
+            CloseHandle(file);
+            return result;
+        }
+        sinks.push_back(std::move(sink));
     }
 
     std::vector<char> buffer(kReadBufferSize);
@@ -148,12 +218,14 @@ Sha256Result hashFile(const std::wstring& inputPath)
         }
         if (read == 0)
             break;
-        status = BCryptHashData(hash, reinterpret_cast<PUCHAR>(buffer.data()), read, 0);
-        if (status != 0) {
-            readOk = false;
-            result.error = L"Windows CNG hashing failed";
-            break;
+        for (const auto& sink : sinks) {
+            if (!sink->update(buffer.data(), static_cast<std::size_t>(read), result.error)) {
+                readOk = false;
+                break;
+            }
         }
+        if (!readOk)
+            break;
         result.bytes += read;
     }
 
@@ -162,20 +234,23 @@ Sha256Result hashFile(const std::wstring& inputPath)
         result.error = L"Input file changed while hashing";
     }
     if (readOk) {
-        status = BCryptFinishHash(hash, result.digest.data(),
-                                  static_cast<ULONG>(result.digest.size()), 0);
-        if (status != 0) {
-            readOk = false;
-            result.error = L"Windows CNG finalization failed";
+        for (std::size_t index = 0; index < sinks.size() && readOk; ++index) {
+            HashDigest entry;
+            entry.algorithm = algorithms[index];
+            if (!sinks[index]->finalize(entry.digest, result.error)) {
+                readOk = false;
+            } else {
+                result.digests.push_back(std::move(entry));
+            }
         }
     }
 
-    BCryptDestroyHash(hash);
-    BCryptCloseAlgorithmProvider(algorithm, 0);
     CloseHandle(file);
     result.ok = readOk;
-    if (!result.ok)
-        result.digest.fill(0);
+    if (!result.ok) {
+        result.digests.clear();
+        result.bytes = 0;
+    }
     return result;
 }
 
@@ -184,10 +259,11 @@ int run(const std::vector<std::wstring>& arguments)
     std::wstring input;
     std::wstring outputBase;
     OutputCase outputCase = OutputCase::Lower;
-    if (!parseArguments(arguments, input, outputBase, outputCase))
+    std::vector<HashAlgorithm> algorithms;
+    if (!parseArguments(arguments, input, outputBase, outputCase, algorithms))
         return 2;
 
-    const auto result = hashFile(input);
+    const auto result = hashFile(input, algorithms);
     if (!result.ok) {
         std::wcerr << result.error << L'\n';
         return 3;
@@ -195,13 +271,39 @@ int run(const std::vector<std::wstring>& arguments)
 
     const char* digits = (outputCase == OutputCase::Upper) ? "0123456789ABCDEF"
                                                            : "0123456789abcdef";
-    std::string digest;
-    digest.reserve(result.digest.size() * 2);
-    for (const auto byte : result.digest) {
-        digest.push_back(digits[byte >> 4]);
-        digest.push_back(digits[byte & 0x0f]);
+    const auto toHex = [digits](const std::vector<std::uint8_t>& digest) {
+        std::string text;
+        text.reserve(digest.size() * 2);
+        for (const auto byte : digest) {
+            text.push_back(digits[byte >> 4]);
+            text.push_back(digits[byte & 0x0f]);
+        }
+        return text;
+    };
+
+    // One algorithm stays a flat single row; several algorithms are grouped
+    // into one subgroup whose value is an ordered array of one-key fields.
+    // ordered_json keeps the documented key order in the published bytes.
+    nlohmann::ordered_json data;
+    if (result.digests.size() == 1) {
+        const auto& entry = result.digests.front();
+        data[narrowLabel(hashAlgorithmLabel(entry.algorithm))] = toHex(entry.digest);
+    } else {
+        nlohmann::ordered_json rows = nlohmann::ordered_json::array();
+        for (const auto& entry : result.digests) {
+            rows.push_back(
+                nlohmann::ordered_json{{narrowLabel(hashAlgorithmLabel(entry.algorithm)),
+                                        toHex(entry.digest)}});
+        }
+        nlohmann::ordered_json group;
+        group["value"] = std::move(rows);
+        data[kHashGroupTitle] = std::move(group);
     }
-    const std::string json = std::string("{\"SHA-256\":\"") + digest + "\"}\n";
+    nlohmann::ordered_json envelope;
+    envelope["result_schema"] = 1;
+    envelope["data"] = std::move(data);
+    const std::string json = envelope.dump() + "\n";
+
     const auto outputPath = outputPathFor(outputBase);
     const auto parent = std::filesystem::path(outputPath).parent_path();
     const auto directory = parent.empty() ? std::filesystem::path(L".") : parent;

@@ -55,8 +55,14 @@ were identical.
   `Image Scopes`, `Digital Signature`), so the Inspector shows one section per
   plugin instead of loose rows that can collide across plugins. Row identity is
   `stableEntryId(key, parentGroupOrSubgroupId)`, so the subgroup also namespaces
-  the keys. `sha256-property` keeps the flat single-row form because its whole
-  result is one row (user decision, 2026-09-21).
+  the keys. `sha256-property` kept the flat single-row form while its whole
+  result was one row (user decision, 2026-09-21). Addendum 2026-10-07: the
+  package computes eight algorithms now (MD5 and SHA-1 are left out because
+  the host already reports them); a single selected algorithm (the
+  default) still publishes the flat data-level row, and several selected
+  algorithms publish one `Hashes` subgroup whose value is the ordered
+  array-of-one-key-fields form, so the package now relies on the subgroup-array
+  host support exactly like the other packages.
 - `result_schema` must be exactly integer `1` for Property
   (`manifestinvocationparser.cpp`); `no_cache` is only valid for Preview.
 - Property capability tokens allowed: `${input_file}`, `${output_file}`,
@@ -69,9 +75,10 @@ were identical.
   Only `appMinVersion` is validated as a three-segment version string;
   `version` is read but not validated by the host.
 - `invocations` present => canonical execution contract. The flat
-  `command`/`arguments` shape (reference implementation: the current,
-  actively maintained `sha256-property`) is a different, equally supported
-  contract form, not a leftover; new plugins declare `invocations`.
+  `command`/`arguments` shape remains an equally supported contract form, not
+  a leftover, but no current package uses it any more: `sha256-property` moved
+  to the canonical `invocations.property` form on 2026-10-07, and new plugins
+  declare `invocations`.
 - The helper's working directory is the package install directory, and
   `useCommandWrapper` is enabled by the host.
 - The host may kill the helper and its whole process tree on timeout/cancel
@@ -170,4 +177,6 @@ Image scopes (three peer image fields):
   subgroup-array support: an older host collapses such a group into a single
   empty text row. `appMinVersion` in those manifests must be raised to the
   first host release that contains the support, in the same step that
-  publishes them.
+  publishes them. For `sha256-property` 1.1.0 this applies only to the
+  opt-in grouped output (`--algorithms` with several names or `all`); the
+  default single-row output works on every host that accepts the manifest.
