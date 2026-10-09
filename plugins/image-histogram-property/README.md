@@ -66,7 +66,8 @@ into a single empty text row, losing the statistics and the charts.
 host support. It must be raised to the first host release that carries the
 subgroup-chart change before 1.1.0 is published; the number cannot be written
 earlier, and publishing to an older host loses the charts silently while the
-statistics keep rendering (tracked in `docs/RESULTS.md` section 5, item 2).
+statistics keep rendering (the host-side behaviour is recorded in
+`docs/CONTRACT_NOTES.md`, Host Property pipeline, typed chart rows).
 
 ## Domain outcomes
 

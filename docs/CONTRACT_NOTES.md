@@ -52,8 +52,8 @@ were identical.
   before the change collapses the array into a single empty text row.
 - One group per plugin: every package publishes its whole result - rows and
   charts - inside a single subgroup titled after the plugin (`Git`,
-  `Image Scopes`, `Digital Signature`), so the Inspector shows one section per
-  plugin instead of loose rows that can collide across plugins. Row identity is
+  `Image Scopes`, `Digital Signature`, `PDB`), so the Inspector shows one
+  section per plugin instead of loose rows that can collide across plugins.
   `stableEntryId(key, parentGroupOrSubgroupId)`, so the subgroup also namespaces
   the keys. `sha256-property` kept the flat single-row form while its whole
   result was one row (user decision, 2026-09-21). Addendum 2026-10-07: the
@@ -86,8 +86,8 @@ were identical.
   timeout.
 - Inspector row identity is `stableEntryId(key, parentGroupOrSubgroupId)`, not
   namespaced by plugin id. Distinct subgroup titles (`Git`, `Digital
-  Signature`) and uniquely named text rows avoid collisions; image items become
-  chart items keyed by their title.
+  Signature`, `PDB`) and uniquely named text rows avoid collisions; image
+  items become chart items keyed by their title.
 
 ## Output shapes required
 
@@ -96,6 +96,7 @@ Result groups (namespaced subgroup values, flat strings):
 ```json
 {"result_schema":1,"data":{"Git":{"value":{"Repository":"not"}}}}
 {"result_schema":1,"data":{"Digital Signature":{"value":{"Status":"Unsigned"}}}}
+{"result_schema":1,"data":{"PDB":{"value":[{"Status":"Valid"}]}}}
 ```
 
 Image scopes (three peer image fields):
@@ -159,8 +160,10 @@ Image scopes (three peer image fields):
 ## Toolchain
 
 - Plugins build standalone with CMake + CTest.
-- `git-info-property` / `digital-signature-property`: MSVC x64, static CRT,
-  no Qt.
+- `git-info-property`, `digital-signature-property` and `pdb-property`: MSVC
+  x64, static CRT, no Qt.
+- `pdb-property` needs no extra deployment step: the raw_pdb PDB parser is
+  vendored as source and compiled into the helper.
 - `image-histogram-property`: Qt 6.8 MSVC x64 (`<qt-prefix>`), deployed with
   `windeployqt`.
 - No machine is assumed to ship a standalone Git: the real-git integration
@@ -173,8 +176,9 @@ Image scopes (three peer image fields):
 - Every manifest keeps `appMinVersion: "4.5.10"` for now. Releasing any
   package whose subgroup value is an **array of one-key fields**
   (`git-info-property`, `digital-signature-property`,
-  `image-histogram-property`) requires a host release that carries the
-  subgroup-array support: an older host collapses such a group into a single
+  `image-histogram-property`, `pdb-property`) requires a host release that
+  carries the subgroup-array support: an older host collapses such a group
+  into a single
   empty text row. `appMinVersion` in those manifests must be raised to the
   first host release that contains the support, in the same step that
   publishes them. For `sha256-property` 1.1.0 this applies only to the

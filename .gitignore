@@ -135,6 +135,10 @@ x86/
 # Build/staging trees next to a package (dist/ is ignored above)
 dist.staging/
 
+# The two committed pdb-property fixtures are test data, not debug output;
+# *.pdb above exists for build artifacts only.
+!plugins/pdb-property/test/fixtures/*.pdb
+
 ### CMake user presets
 # Machine-local build locations; never commit absolute paths
 CMakeUserPresets.json

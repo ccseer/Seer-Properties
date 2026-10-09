@@ -96,7 +96,7 @@ malware-safety verdict.
 ## Build and test
 
 Dependencies: the C++ standard library, the vendored single-header
-[nlohmann/json](../../third_party), the shared
+[nlohmann/json](../third_party), the shared
 [propertycommon.h](../common/propertycommon.h) (path containment, `.json`
 suffix, atomic JSON publication — shared with `git-info-property`), and the
 Win32 API. No Qt and no other third-party code. The helper links the static

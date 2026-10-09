@@ -33,8 +33,9 @@ plugins/third_party/nlohmann/json.hpp   single-header JSON (build-time only)
 plugins/third_party/xxhash/             vendored xxHash v0.8.2 (XXH64, header-only)
 plugins/third_party/blake3/             vendored BLAKE3 1.8.2 portable C reference
 plugins/third_party/sha3/               vendored tiny_sha3 (SHA-3/Keccak reference)
+plugins/third_party/rawpdb/             vendored raw_pdb (PDB/MSF parsing, BSD 2-Clause,
+                                        pinned revision, see its README for caveats)
 docs/CONTRACT_NOTES.md   host-alignment findings; read before touching helpers
-docs/RESULTS.md          verification report for the current plugin set
 ```
 
 Every package is a standalone CMake project, so shared code is header-only and
@@ -51,12 +52,13 @@ must not drift between packages:
   sets differ (`--git`, `--scopes`), but the rules are identical.
 - Internal-deadline parameter convention: a positive value is the budget in
   milliseconds; `0` means "the budget is already exhausted", so the work is
-  abandoned at the first checkpoint. No value disables the deadline. Both
-  `digital-signature-property` and `image-histogram-property` follow this, so
-  `0` is a test hook everywhere and never means "run without a deadline".
+  abandoned at the first checkpoint. No value disables the deadline.
+  `digital-signature-property`, `image-histogram-property` and
+  `pdb-property` follow this, so `0` is a test hook everywhere and never
+  means "run without a deadline".
 - Output shape: every package publishes its whole result - flat rows and typed
   chart fields alike - inside exactly one subgroup titled after the plugin
-  (`Git`, `Image Scopes`, `Digital Signature`), so the Inspector shows one
+  (`Git`, `Image Scopes`, `Digital Signature`, `PDB`), so the Inspector shows one
   section per plugin instead of loose rows that could collide across plugins.
   The subgroup's `value` is an **array of one-key fields** and the array order is
   the render order. `sha256-property` keeps the flat single-row form while one
@@ -68,7 +70,7 @@ must not drift between packages:
   host release that carries the change.
 
 Current packages: `image-histogram-property`, `sha256-property`,
-`git-info-property`, `digital-signature-property`.
+`git-info-property`, `digital-signature-property`, `pdb-property`.
 
 ## 3. Critical Rules
 
@@ -237,6 +239,10 @@ archive is verified at build time, so a committed sidecar could only go stale.
   self-contained executable.
 - `image-histogram-property`: Qt 6.8 (Core/Gui); `windeployqt` supplies the
   runtime assets at packaging time.
+- `pdb-property`: C++ standard library (C++17), vendored nlohmann/json,
+  vendored raw_pdb (BSD 2-Clause, source-vendored static library under
+  `plugins/third_party/rawpdb`), Win32 API (Windows 10+) only. Static CRT,
+  one self-contained executable.
 - Third-party libraries are allowed, but prefer libraries that can be
   statically linked or built from source (header-only or source-vendored),
   to keep the deployed package as small as possible and minimize shipped

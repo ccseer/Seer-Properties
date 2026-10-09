@@ -15,6 +15,7 @@ runtime assets that helper needs.
 | [File Hashes](./plugins/sha256-property) | `io.1218.seer.sha256-property` | every file (`${type_file}`) | SHA-256 digest by default; more algorithms selectable via arguments |
 | [Git Info](./plugins/git-info-property) | `io.1218.seer.git-info` | folders (`${type_folder}`) | repository, branch, upstream, ahead/behind, change counts |
 | [Digital Signature](./plugins/digital-signature-property) | `io.1218.seer.digital-signature` | `dll exe` | Authenticode verdict, signer certificate metadata |
+| [PDB](./plugins/pdb-property) | `io.1218.seer.pdb` | `pdb` | format version, GUID, architecture, symbol/type/source counts, largest object contributions |
 
 ## Dependency policy
 
@@ -29,6 +30,10 @@ runtime assets that helper needs.
 * `sha256-property` uses the Win32 BCrypt API plus the vendored xxHash,
   BLAKE3 and SHA-3 sources listed below; it also links the static CRT and ships
   as one self-contained executable.
+* `pdb-property` uses the vendored [raw_pdb](./plugins/third_party/rawpdb)
+  parsing engine (BSD 2-Clause) in addition to nlohmann/json and the Win32
+  API; it also links the static CRT and ships as one self-contained
+  executable.
 
 ## Source layout
 
@@ -42,6 +47,7 @@ plugins/third_party/nlohmann/json.hpp   single-header JSON (build-time only)
 plugins/third_party/xxhash/             vendored xxHash (XXH64, header-only)
 plugins/third_party/blake3/             vendored BLAKE3 portable C reference
 plugins/third_party/sha3/               vendored tiny_sha3 (SHA-3/Keccak reference)
+plugins/third_party/rawpdb/             vendored raw_pdb (PDB/MSF parsing, BSD 2-Clause)
 ```
 
 Build and test a package with its own CMake project; see the README in each

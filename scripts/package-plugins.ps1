@@ -51,7 +51,8 @@ $packages = @(
     "git-info-property",
     "digital-signature-property",
     "image-histogram-property",
-    "sha256-property"
+    "sha256-property",
+    "pdb-property"
 )
 
 function Get-ManifestVersion([string]$PackageDir) {
@@ -372,7 +373,7 @@ foreach ($package in $packages) {
 
     # No sidecar checksum file: the archive is verified against dist above and
     # the checksum is only printed, so nothing stale can be committed later.
-    $hash = (Get-FileHash $zipPath -Algorithm SHA256).Hash
+    $hash = Get-FileSha $zipPath
 
     $results += [pscustomobject]@{ Package = $package; Zip = $zipPath;
                                    Sha256 = $hash }

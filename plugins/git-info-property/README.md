@@ -138,7 +138,7 @@ set. Repository-configured helpers are disabled explicitly
 ## Build and test
 
 Dependencies: the C++ standard library, the vendored single-header
-[nlohmann/json](../../third_party), the shared
+[nlohmann/json](../third_party), the shared
 [propertycommon.h](../common/propertycommon.h) (path containment, `.json`
 suffix, atomic JSON publication — shared with `digital-signature-property`), and
 the Win32 API. No Qt, no Git SDK, and no other third-party code. The helper
